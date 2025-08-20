@@ -1,0 +1,25 @@
+{
+  "name": "mongodb-replication",
+  "version": "1.0.0",
+  "description": "Book Management System with MongoDB Replication",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "bash test.sh",
+    "debug": "node --inspect app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^7.0.0",
+    "ejs": "^3.1.9",
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  },
+  "keywords": ["mongodb", "express", "nodejs", "crud"],
+  "author": "",
+  "license": "ISC"
+}

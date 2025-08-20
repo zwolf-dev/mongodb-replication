@@ -1,0 +1,460 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MongoDB Replication Orchestrator</title>
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#111831; --muted:#9fb3c8; --text:#e6eef7; --accent:#4cc9f0; --ok:#2dd4bf; --warn:#f59e0b; --err:#ef4444;
+    }
+    html,body{height:100%}
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:var(--bg); color:var(--text); }
+    header{padding:16px 24px; background:linear-gradient(90deg,#0f172a,#0b1020); position:sticky; top:0; z-index:10; border-bottom:1px solid #1e293b}
+    h1{margin:0; font-size:20px; letter-spacing:.5px}
+    .container{padding:24px; max-width:1200px; margin:0 auto}
+    .grid{display:grid; gap:16px}
+    .grid.cols-2{grid-template-columns:1fr 1fr}
+    .card{background:var(--panel); border:1px solid #24314d; border-radius:12px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.2)}
+    .section-title{margin:0 0 12px; font-size:16px; color:#bcd0e6}
+    label{display:block; font-size:12px; color:var(--muted); margin:8px 0 4px}
+    input, select, button, textarea { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #2b3a5a; background:#0c142a; color:var(--text)}
+    input:focus, textarea:focus, select:focus{outline:2px solid #2b9ed1; border-color:#46b5e0}
+    textarea{min-height:200px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace}
+    button{cursor:pointer; background:#0b2447; border-color:#265b91}
+    button.primary{background:linear-gradient(135deg,#0ea5e9,#22d3ee); color:#001018; border:none; font-weight:600}
+    button.ghost{background:transparent}
+    .row{display:flex; gap:10px}
+    .row>*{flex:1}
+    .muted{color:var(--muted)}
+    .status{padding:10px 12px; border-radius:8px; background:#0c142a; border:1px solid #2b3a5a; font-weight:600}
+    pre { background: #0a0f1f; color: #a6f0c6; padding: 12px; height: 220px; overflow: auto; border-radius:10px; border:1px solid #22304f }
+    .small{font-size:12px}
+  </style>
+  <script>
+    const $ = (id) => document.getElementById(id)
+  </script>
+  </head>
+<body>
+  <header>
+    <h1>MongoDB Replication Orchestrator</h1>
+  </header>
+  <div class="container grid">
+    <div class="grid cols-2">
+      <section class="card">
+        <h3 class="section-title">Server Management (Form)</h3>
+        <div class="row">
+          <div>
+            <label>Replica Set Name</label>
+            <input id="f_replset" value="rs0" />
+          </div>
+          <div>
+            <label>MongoDB Port</label>
+            <input id="f_mongo_port" type="number" value="27017" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>DB Name</label>
+            <input id="f_db" value="appdb" />
+          </div>
+          <div>
+            <label>Collection</label>
+            <input id="f_coll" value="events" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Root User</label>
+            <input id="f_root_user" value="rootadmin" />
+          </div>
+          <div>
+            <label>Root Password</label>
+            <input id="f_root_pass" value="StrongRootPass123!" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>App User</label>
+            <input id="f_app_user" value="appuser" />
+          </div>
+          <div>
+            <label>App Password</label>
+            <input id="f_app_pass" value="StrongAppPass123!" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Primary Host</label>
+            <input id="p_host" placeholder="10.0.0.10" />
+            <label class="small">Username</label>
+            <input id="p_user" value="rocky" />
+            <label class="small">Password</label>
+            <input id="p_pass" type="password" placeholder="SSH password or leave if using key" />
+          </div>
+          <div>
+            <label>Secondary Host</label>
+            <input id="s_host" placeholder="10.0.0.11" />
+            <label class="small">Username</label>
+            <input id="s_user" value="rocky" />
+            <label class="small">Password</label>
+            <input id="s_pass" type="password" />
+          </div>
+          <div>
+            <label>Analytics Host</label>
+            <input id="a_host" placeholder="10.0.0.12" />
+            <label class="small">Username</label>
+            <input id="a_user" value="rocky" />
+            <label class="small">Password</label>
+            <input id="a_pass" type="password" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="primary" onclick="saveSpec()">Save Spec</button>
+          <button onclick="loadSpec()">Load Saved</button>
+          <button class="ghost" onclick="toJson()">Sync to JSON</button>
+          <button class="ghost" onclick="fromJson()">Sync from JSON</button>
+          <button class="ghost" onclick="useGCPTemplate()">GCP Template</button>
+          <button class="ghost" onclick="validateSpec()">Validate</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3 class="section-title">Cluster Spec (JSON)</h3>
+        <textarea id="spec"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button onclick="testConnections()">Test SSH</button>
+          <button class="primary" onclick="install()">Install & Configure</button>
+          <button onclick="benchmark()">Benchmark</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h3 class="section-title">Seed Dummy Data</h3>
+      <div class="row">
+        <div>
+          <label>Documents</label>
+          <input id="numdocs" type="number" value="100000" min="1000" step="1000" />
+        </div>
+        <div>
+          <label>Large Files (optional)</label>
+          <input id="files" type="file" multiple />
+        </div>
+        <div style="align-self:flex-end">
+          <button onclick="seed()">Insert</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid cols-2">
+      <section class="card">
+        <h3 class="section-title">Health</h3>
+        <button onclick="health()">Check Lag</button>
+        <pre id="health"></pre>
+      </section>
+
+      <section class="card">
+        <h3 class="section-title">Live Logs</h3>
+        <div class="row">
+          <div>
+            <label>Role</label>
+            <select id="logRole">
+              <option>primary</option>
+              <option>secondary</option>
+              <option>analytics</option>
+            </select>
+          </div>
+          <div style="align-self:flex-end" class="row">
+            <button onclick="connectLogs()">Connect</button>
+            <button onclick="disconnectLogs()">Disconnect</button>
+          </div>
+        </div>
+        <pre id="logs"></pre>
+      </section>
+    </div>
+
+    <section class="card">
+      <h3 class="section-title">Web SSH</h3>
+      <div class="row">
+        <div>
+          <label>Role</label>
+          <select id="sshRole">
+            <option>primary</option>
+            <option>secondary</option>
+            <option>analytics</option>
+          </select>
+        </div>
+        <div style="align-self:flex-end" class="row">
+          <button onclick="connectSSH()">Connect</button>
+          <button onclick="disconnectSSH()">Disconnect</button>
+        </div>
+      </div>
+      <pre id="sshout"></pre>
+      <input id="sshcmd" placeholder="type command and press Enter" />
+    </section>
+
+    <section class="card">
+      <h3 class="section-title">Status</h3>
+      <div id="status" class="status">Ready</div>
+    </section>
+  </div>
+
+  <script>
+    let logSock = null;
+    let sshSock = null;
+
+    function currentSpecFromForm(){
+      const port = parseInt($("f_mongo_port").value||"27017",10)
+      return {
+        replset: $("f_replset").value||"rs0",
+        creds: {
+          root_user: $("f_root_user").value||"rootadmin",
+          root_pass: $("f_root_pass").value||"",
+          app_user: $("f_app_user").value||"appuser",
+          app_pass: $("f_app_pass").value||""
+        },
+        db_name: $("f_db").value||"appdb",
+        coll_name: $("f_coll").value||"events",
+        nodes: {
+          primary:   {host: $("p_host").value||"", username: $("p_user").value||"", password: $("p_pass").value||"", mongo_port: port, role: "primary"},
+          secondary: {host: $("s_host").value||"", username: $("s_user").value||"", password: $("s_pass").value||"", mongo_port: port, role: "secondary"},
+          analytics: {host: $("a_host").value||"", username: $("a_user").value||"", password: $("a_pass").value||"", mongo_port: port, role: "analytics"}
+        }
+      }
+    }
+
+    function fillFormFromSpec(spec){
+      $("f_replset").value = spec.replset||"rs0"
+      $("f_mongo_port").value = spec.nodes?.primary?.mongo_port || 27017
+      $("f_db").value = spec.db_name||"appdb"
+      $("f_coll").value = spec.coll_name||"events"
+      $("f_root_user").value = spec.creds?.root_user||"rootadmin"
+      $("f_root_pass").value = spec.creds?.root_pass||""
+      $("f_app_user").value = spec.creds?.app_user||"appuser"
+      $("f_app_pass").value = spec.creds?.app_pass||""
+      $("p_host").value = spec.nodes?.primary?.host||""
+      $("p_user").value = spec.nodes?.primary?.username||""
+      $("p_pass").value = spec.nodes?.primary?.password||""
+      $("s_host").value = spec.nodes?.secondary?.host||""
+      $("s_user").value = spec.nodes?.secondary?.username||""
+      $("s_pass").value = spec.nodes?.secondary?.password||""
+      $("a_host").value = spec.nodes?.analytics?.host||""
+      $("a_user").value = spec.nodes?.analytics?.username||""
+      $("a_pass").value = spec.nodes?.analytics?.password||""
+    }
+
+    async function loadSpec(){
+      setStatus('Loading saved spec...')
+      const res = await fetch('/api/spec')
+      const spec = await res.json()
+      $("spec").value = JSON.stringify(spec, null, 2)
+      fillFormFromSpec(spec)
+      setStatus('✅ Spec loaded')
+    }
+
+    async function saveSpec(){
+      try{
+        const spec = currentSpecFromForm()
+        $("spec").value = JSON.stringify(spec, null, 2)
+        const res = await fetch('/api/spec', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec)})
+        const data = await res.json()
+        if(data.status==='ok') setStatus('💾 Spec saved to server')
+        else setStatus('❌ Failed to save spec')
+      }catch(e){ setStatus('❌ '+e.message) }
+    }
+
+    function toJson(){ $("spec").value = JSON.stringify(currentSpecFromForm(), null, 2) }
+    function fromJson(){ try{ const s = JSON.parse($("spec").value); fillFormFromSpec(s) }catch(e){ setStatus('❌ Invalid JSON') } }
+
+    async function testConnections(){
+      try {
+        setStatus('Testing SSH connections...')
+        const spec = JSON.parse($("spec").value)
+        const res = await fetch('/api/test-connections', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec)})
+        const result = await res.json()
+        log(result)
+        const failed = Object.values(result).filter(r => !r.ssh)
+        if (failed.length === 0) {
+          setStatus('✅ All SSH connections successful!')
+        } else {
+          setStatus(`❌ ${failed.length} SSH connection(s) failed`)
+        }
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message)
+        log({error: e.message})
+      }
+    }
+    async function install(){
+      try {
+        setStatus('Installing MongoDB on all nodes...')
+        const spec = JSON.parse($("spec").value)
+        const res = await fetch('/api/install', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec)})
+        const result = await res.json()
+        log(result)
+        if (result.status === 'ok') {
+          setStatus('✅ Installation completed successfully!')
+        } else {
+          setStatus('❌ Installation failed - check logs')
+        }
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message)
+        log({error: e.message})
+      }
+    }
+    async function seed(){
+      try {
+        setStatus('Seeding dummy data...')
+        const spec = JSON.parse($("spec").value)
+        const fd = new FormData()
+        fd.append('spec_json', JSON.stringify(spec))
+        fd.append('num_docs', $("numdocs").value)
+        const files = $("files").files
+        for (let i=0;i<files.length;i++){ fd.append('large_files', files[i]) }
+        const res = await fetch('/api/seed', {method:'POST', body: fd})
+        const result = await res.json()
+        log(result)
+        if (result.error) {
+          setStatus('❌ Seeding failed: ' + result.error)
+        } else {
+          setStatus(`✅ Seeded ${result.inserted} documents successfully!`)
+        }
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message)
+        log({error: e.message})
+      }
+    }
+    async function benchmark(){
+      try {
+        setStatus('Running benchmark...')
+        const spec = JSON.parse($("spec").value)
+        const res = await fetch('/api/benchmark', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec)})
+        const result = await res.json()
+        log(result)
+        if (result.error) {
+          setStatus('❌ Benchmark failed: ' + result.error)
+        } else {
+          setStatus(`✅ Benchmark: Insert ${result.insert_iops} IOPS, Find ${result.find_iops} IOPS`)
+        }
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message)
+        log({error: e.message})
+      }
+    }
+    async function health(){
+      try {
+        const spec = JSON.parse($("spec").value)
+        const res = await fetch('/api/health', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec)})
+        const result = await res.json()
+        $("health").textContent = JSON.stringify(result, null, 2)
+        if (result.error) {
+          setStatus('❌ Health check failed: ' + result.error)
+        } else if (result.ok) {
+          setStatus('✅ All nodes synchronized (no lag)')
+        } else {
+          const maxLag = Math.max(...Object.values(result.lag_seconds))
+          setStatus(`⚠️ Max lag: ${maxLag.toFixed(2)}s`)
+        }
+      } catch (e) {
+        setStatus('❌ Error: ' + e.message)
+        log({error: e.message})
+      }
+    }
+    function log(msg){
+      const timestamp = new Date().toISOString()
+      $("logs").textContent += `[${timestamp}] ${JSON.stringify(msg, null, 2)}\n`
+      $("logs").scrollTop = $("logs").scrollHeight
+    }
+
+    function setStatus(msg) {
+      const statusEl = $("status")
+      if (statusEl) statusEl.textContent = msg
+    }
+    function nodeByRole(role){
+      const spec = JSON.parse($("spec").value)
+      return spec.nodes[role]
+    }
+    function connectLogs(){
+      const role = $("logRole").value
+      const ws = new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/logs/'+role)
+      logSock = ws
+      ws.onopen = () => { ws.send(JSON.stringify(nodeByRole(role))); setStatus(`📡 Connected to ${role} logs`) }
+      ws.onmessage = (ev) => { $("logs").textContent += ev.data }
+      ws.onclose = () => { logSock = null; setStatus('📡 Log connection closed') }
+      ws.onerror = (e) => { setStatus('❌ Log connection error') }
+    }
+
+    function disconnectLogs(){ 
+      if (logSock){ logSock.close(); logSock=null; setStatus('📡 Disconnected from logs') } 
+    }
+
+    function connectSSH(){
+      const role = $("sshRole").value
+      const ws = new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/ssh/'+role)
+      sshSock = ws
+      ws.onopen = () => { ws.send(JSON.stringify(nodeByRole(role))); setStatus(`🔧 Connected to ${role} SSH`) }
+      ws.onmessage = (ev) => { $("sshout").textContent += ev.data }
+      ws.onclose = () => { sshSock = null; setStatus('🔧 SSH connection closed') }
+      ws.onerror = (e) => { setStatus('❌ SSH connection error') }
+    }
+
+    function disconnectSSH(){ 
+      if (sshSock){ sshSock.close(); sshSock=null; setStatus('🔧 Disconnected from SSH') } 
+    }
+
+    function useGCPTemplate() {
+      const template = {
+        "replset": "rs0",
+        "creds": {
+          "root_user": "rootadmin", 
+          "root_pass": "MongoRoot" + Math.random().toString(36).slice(-8) + "!",
+          "app_user": "appuser", 
+          "app_pass": "MongoApp" + Math.random().toString(36).slice(-8) + "!"
+        },
+        "db_name": "appdb",
+        "coll_name": "events",
+        "nodes": {
+          "primary": {"host": "10.0.0.10", "username": "rocky", "password": "ChangeMePlease!", "mongo_port": 27017, "role": "primary"},
+          "secondary": {"host": "10.0.0.11", "username": "rocky", "password": "ChangeMePlease!", "mongo_port": 27017, "role": "secondary"},
+          "analytics": {"host": "10.0.0.12", "username": "rocky", "password": "ChangeMePlease!", "mongo_port": 27017, "role": "analytics"}
+        }
+      }
+      $("spec").value = JSON.stringify(template, null, 2)
+      fillFormFromSpec(template)
+      setStatus('📝 GCP template loaded - update IPs and credentials')
+    }
+
+    function validateSpec() {
+      try {
+        const spec = JSON.parse($("spec").value)
+        const issues = []
+        if (!spec.nodes || Object.keys(spec.nodes).length !== 3) {
+          issues.push("Must have exactly 3 nodes: primary, secondary, analytics")
+        }
+        if (!spec.nodes?.primary) issues.push("Missing primary node")
+        if (!spec.nodes?.secondary) issues.push("Missing secondary node")
+        if (!spec.nodes?.analytics) issues.push("Missing analytics node")
+        for (const [role, node] of Object.entries(spec.nodes || {})) {
+          if (!node.host || node.host.includes('_IP')) issues.push(`${role}: Update host IP address`)
+          if (!node.username) issues.push(`${role}: Missing username`)
+          if (!node.password && !node.pkey) issues.push(`${role}: Need either password or SSH key`)
+        }
+        if (!spec.creds?.root_pass || spec.creds.root_pass.length < 8) issues.push("Update root_pass to a strong password")
+        if (!spec.creds?.app_pass || spec.creds.app_pass.length < 8) issues.push("Update app_pass to a strong password")
+        if (issues.length === 0) { setStatus('✅ Specification is valid!'); log({validation: 'PASSED'}) }
+        else { setStatus(`❌ ${issues.length} validation issues found`); log({validation: 'FAILED', issues: issues}) }
+      } catch (e) {
+        setStatus('❌ Invalid JSON in specification')
+        log({validation: 'JSON_ERROR', error: e.message})
+      }
+    }
+
+    $("sshcmd").addEventListener('keydown', (e)=>{
+      if (e.key==='Enter' && sshSock){ sshSock.send(e.target.value); e.target.value=''; }
+    })
+
+    // Load saved spec on first load
+    window.addEventListener('DOMContentLoaded', loadSpec)
+  </script>
+</body>
+</html>
